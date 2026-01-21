@@ -41,7 +41,7 @@ use syn::{Fields, ItemEnum};
 
 use crate::graph::Config;
 use crate::leaf::VariantKind;
-use crate::parser::{Definition, ErrorType, Subpatterns};
+use crate::parser::{Definition, ErrorType, LogosGenerics, Subpatterns};
 
 const LOGOS_ATTR: &str = "logos";
 const ERROR_ATTR: &str = "error";
@@ -284,19 +284,25 @@ pub fn generate(input: TokenStream) -> TokenStream {
         .unwrap_or_else(|| parse_quote!(::logos));
 
     let generics = parser.generics();
-    let this = quote!(#name #generics);
+    let LogosGenerics {
+        impl_generics,
+        ty_generics,
+        lt_generics: _,
+        source_lifetime,
+    } = &generics;
+    let this = quote!(#name #ty_generics);
 
     let impl_logos = |body| {
         quote! {
-            impl<'s> #logos_path::Logos<'s> for #this {
+            impl #impl_generics #logos_path::Logos<#source_lifetime> for #this {
                 type Error = #error_type;
 
                 type Extras = #extras;
 
                 type Source = #source;
 
-                fn lex(lex: &mut #logos_path::Lexer<'s, Self>)
-                    -> core::option::Option<core::result::Result<Self, <Self as #logos_path::Logos<'s>>::Error>> {
+                fn lex(lex: &mut #logos_path::Lexer<#source_lifetime, Self>)
+                    -> core::option::Option<core::result::Result<Self, <Self as #logos_path::Logos<#source_lifetime>>::Error>> {
                     #body
                 }
             }
@@ -397,7 +403,7 @@ pub fn generate(input: TokenStream) -> TokenStream {
     let config = generator::Config {
         use_state_machine_codegen: cfg!(feature = "state_machine_codegen"),
     };
-    let mut generator = Generator::new(config, name, &this, &graph, &error_callback);
+    let mut generator = Generator::new(config, name, &this, &graph, &generics, &error_callback);
 
     let body = generator.generate();
     impl_logos(quote! {
@@ -412,7 +418,7 @@ pub fn generate(input: TokenStream) -> TokenStream {
         use core::option::Option as _Option;
         use #logos_path::Logos;
 
-        type _Lexer<'s> = #logos_path::Lexer<'s, #this>;
+        type _Lexer #impl_generics = #logos_path::Lexer<#source_lifetime, #this>;
 
         #body
     })

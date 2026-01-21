@@ -10,6 +10,7 @@ impl Generator<'_> {
     /// Its return value is placed into the generated code whenever a match is encountered.
     /// The `leaf` parameter is the leaf node that was matched.
     pub fn generate_callback(&self, leaf: &Leaf) -> TokenStream {
+        let source_lifetime = &self.generics.source_lifetime;
         let name = self.name;
         let this = self.this;
 
@@ -32,7 +33,7 @@ impl Generator<'_> {
             (VariantKind::Skip, None) => quote!(CallbackResult::Skip),
             (VariantKind::Skip, Some(cb)) => quote! {
                 let cb_result = #cb;
-                let srv = SkipRetVal::<'s, #this>::construct(cb_result);
+                let srv = SkipRetVal::<#source_lifetime, #this>::construct(cb_result);
                 CallbackResult::from(srv)
             },
             (VariantKind::Unit(ident), None) => quote! {
@@ -40,7 +41,7 @@ impl Generator<'_> {
             },
             (VariantKind::Unit(ident), Some(cb)) => quote! {
                 let cb_result = #cb;
-                CallbackRetVal::<'s, (), #this>::construct(cb_result, |()| #name::#ident)
+                CallbackRetVal::<#source_lifetime, (), #this>::construct(cb_result, |()| #name::#ident)
             },
             (VariantKind::Value(ident, _), None) => quote! {
                 let token = #name::#ident(lex.slice());
@@ -48,7 +49,7 @@ impl Generator<'_> {
             },
             (VariantKind::Value(ident, ret_type), Some(cb)) => quote! {
                 let cb_result = #cb;
-                CallbackRetVal::<'s, #ret_type, #this>::construct(cb_result, #name::#ident)
+                CallbackRetVal::<#source_lifetime, #ret_type, #this>::construct(cb_result, #name::#ident)
             },
         }
     }

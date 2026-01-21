@@ -8,6 +8,7 @@ use syn::Ident;
 
 use crate::graph::{ByteClass, Graph, State, StateType};
 use crate::leaf::{Callback, InlineCallback};
+use crate::parser::LogosGenerics;
 use crate::util::ToIdent;
 
 mod fast_loop;
@@ -36,6 +37,7 @@ pub struct Generator<'a> {
     error_callback: &'a Option<Callback>,
     /// Bit masks that will be compressed into LUTs for fast looping
     loop_masks: HashMap<[bool; 256], usize>,
+    generics: &'a LogosGenerics,
 }
 
 impl<'a> Generator<'a> {
@@ -44,6 +46,7 @@ impl<'a> Generator<'a> {
         name: &'a Ident,
         this: &'a TokenStream,
         graph: &'a Graph,
+        generics: &'a LogosGenerics,
         error_callback: &'a Option<Callback>,
     ) -> Self {
         let state_idents = graph
@@ -77,6 +80,7 @@ impl<'a> Generator<'a> {
             leaf_idents,
             error_callback,
             loop_masks: HashMap::new(),
+            generics,
         }
     }
 
@@ -166,6 +170,7 @@ impl<'a> Generator<'a> {
     // Self instance (or an error if the context is zero).
     fn make_token_fn(&self) -> TokenStream {
         let this = self.this;
+        let source_lifetime = &self.generics.source_lifetime;
 
         let leaf_bodies = self
             .graph
@@ -190,7 +195,7 @@ impl<'a> Generator<'a> {
                 error.into()
             },
             None => quote! {
-                <#this as Logos<'s>>::Error::default()
+                <#this as Logos<#source_lifetime>>::Error::default()
             },
         };
 
@@ -203,15 +208,21 @@ impl<'a> Generator<'a> {
         } else {
             None
         };
+        let LogosGenerics {
+            impl_generics,
+            ty_generics: _,
+            lt_generics,
+            source_lifetime,
+        } = &self.generics;
 
         quote! {
             #[inline]
-            fn _make_error<'s>(lex: &mut _Lexer<'s>) -> <#this as Logos<'s>>::Error {
+            fn _make_error #impl_generics(lex: &mut _Lexer #lt_generics) -> <#this as Logos<#source_lifetime>>::Error {
                 #error_body
             }
             #[inline]
-            fn _get_action<'s>(lex: &mut _Lexer<'s>, offset: usize, context: _Option<LogosLeaf>)
-                -> CallbackResult<'s, #this>
+            fn _get_action #impl_generics(lex: &mut _Lexer #lt_generics, offset: usize, context: _Option<LogosLeaf>)
+                -> CallbackResult<#source_lifetime, #this>
             {
                 match context {
                     None => {
@@ -301,9 +312,18 @@ impl<'a> Generator<'a> {
             }
         } else {
             let this = self.this;
+            let LogosGenerics {
+                impl_generics,
+                lt_generics,
+                ty_generics: _,
+                source_lifetime,
+            } = &self.generics;
             quote! {
-                fn #this_ident<'s>(lex: &mut _Lexer<'s>, mut offset: usize, mut context: _Option<LogosLeaf>)
-                    -> _Option<_Result<#this, <#this as Logos<'s>>::Error>> {
+                fn #this_ident #impl_generics (
+                    lex: &mut _Lexer #lt_generics,
+                    mut offset: usize,
+                    mut context: _Option<LogosLeaf>
+                ) -> _Option<_Result<#this, <#this as Logos<#source_lifetime>>::Error>> {
                     #fast_loop
                     #setup
                     #fork
